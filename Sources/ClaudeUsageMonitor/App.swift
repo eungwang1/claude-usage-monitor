@@ -14,14 +14,14 @@ struct ClaudeUsageMonitorApp: App {
     }
 }
 
-/// Menu bar title: the account with the most headroom, so a glance answers
-/// "which account should I use right now?".
+/// Menu bar title: the account currently in use and how much of its tightest
+/// limit is gone, so a glance answers "how much room do I have left?".
 struct MenuBarLabel: View {
     @ObservedObject var store: AccountStore
 
     var body: some View {
-        if let best = store.bestAccount {
-            Label("\(best.account.label) \(Int(best.snapshot.worstPercent))%",
+        if let current = store.menuBarAccount {
+            Label("\(current.account.label) \(Int(current.snapshot.worstPercent))%",
                   systemImage: "gauge.with.dots.needle.bottom.50percent")
                 .labelStyle(.titleAndIcon)
         } else {

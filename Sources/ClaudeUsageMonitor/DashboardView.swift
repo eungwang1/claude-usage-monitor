@@ -203,6 +203,18 @@ struct AccountCard: View {
 
     private var snapshot: UsageSnapshot? { status.snapshot ?? fallback }
 
+    private var failureMessage: String? {
+        if case .failed(let message) = status { return message }
+        return nil
+    }
+
+    /// A failed refresh only matters if what we're showing has aged. A 429 right
+    /// after a successful poll leaves the numbers current, so it isn't a warning.
+    private var isStale: Bool {
+        guard let snapshot else { return true }
+        return now.timeIntervalSince(snapshot.fetchedAt) > 900
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -259,6 +271,16 @@ struct AccountCard: View {
             } else if case .loading = status {
                 ProgressView().controlSize(.small)
             }
+
+            // Spell the failure out in the card. A tooltip is unreachable in a
+            // menu bar popover — the user would have to guess what went wrong.
+            if let failureMessage {
+                Text(isStale ? "새로고침 실패: \(failureMessage)"
+                             : "새로고침 건너뜀: \(failureMessage)")
+                    .font(.caption2)
+                    .foregroundStyle(isStale ? Color.orange : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(10)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
@@ -273,11 +295,10 @@ struct AccountCard: View {
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(Color.orange.opacity(0.2), in: Capsule())
                 .foregroundStyle(.orange)
-        case .failed(let message):
+        case .failed where isStale:
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundStyle(.orange)
-                .help(message)
         case .loading where snapshot != nil:
             ProgressView().controlSize(.small).scaleEffect(0.6)
         default:

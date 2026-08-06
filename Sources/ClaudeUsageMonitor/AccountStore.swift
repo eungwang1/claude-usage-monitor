@@ -190,6 +190,10 @@ final class AccountStore: ObservableObject {
     }
 
     func refreshAll(force: Bool = false) async {
+        // The active account can change outside this app — a /login in Claude
+        // Code, for instance — so re-check rather than trusting the last switch.
+        detectActiveAccount()
+
         // Stagger the accounts so four requests don't land on the endpoint at once.
         for (index, account) in accounts.enumerated() {
             if index > 0 {
@@ -264,6 +268,17 @@ final class AccountStore: ObservableObject {
     }
 
     // MARK: Menu bar summary
+
+    /// What the menu bar shows: the account being spent right now. Falls back to
+    /// the one with the most headroom when no account is known to be active.
+    var menuBarAccount: (account: Account, snapshot: UsageSnapshot)? {
+        if let activeID = activeAccountID,
+           let account = accounts.first(where: { $0.id == activeID }),
+           let snapshot = lastGood[account.id] {
+            return (account, snapshot)
+        }
+        return bestAccount
+    }
 
     /// The account with the most headroom — the one worth switching to.
     var bestAccount: (account: Account, snapshot: UsageSnapshot)? {
