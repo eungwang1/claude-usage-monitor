@@ -114,15 +114,71 @@ enum Keychain {
             kSecAttrAccount as String: account,
         ]
 
-        var status = SecItemUpdate(query as CFDictionary,
+        // Updating preserves the item's existing ACL, which is what keeps Claude
+        // Code able to read its own credentials without a prompt.
+        let status = SecItemUpdate(query as CFDictionary,
                                    [kSecValueData as String: data] as CFDictionary)
-        if status == errSecItemNotFound {
-            var insert = query
-            insert[kSecValueData as String] = data
-            insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-            status = SecItemAdd(insert as CFDictionary, nil)
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else { throw KeychainError.os(status) }
+
+        // No item to update — Claude Code is logged out. Creating it with
+        // SecItemAdd would put *this* app alone on the ACL, so Claude Code would
+        // be prompted on every single keychain read afterwards. Create it through
+        // the security tool instead, naming both binaries as trusted.
+        try createClaudeCodeItem(account: account, payload: payload)
+    }
+
+    /// `security add-generic-password -T` is the only practical way to seed an
+    /// item whose ACL trusts a binary other than the caller.
+    private static func createClaudeCodeItem(account: String, payload: String) throws {
+        var arguments = [
+            "add-generic-password",
+            "-U",
+            "-s", claudeCodeService,
+            "-a", account,
+            "-w", payload,
+        ]
+
+        // Trust Claude Code itself, plus this app so later switches stay silent.
+        for path in claudeCodeBinaryPaths() {
+            arguments.append(contentsOf: ["-T", path])
         }
-        guard status == errSecSuccess else { throw KeychainError.os(status) }
+        arguments.append(contentsOf: ["-T", Bundle.main.bundlePath])
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        task.arguments = arguments
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+
+        do {
+            try task.run()
+        } catch {
+            throw KeychainError.unexpectedFormat
+        }
+        task.waitUntilExit()
+        guard task.terminationStatus == 0 else {
+            throw KeychainError.os(OSStatus(task.terminationStatus))
+        }
+    }
+
+    /// Claude Code installs each release under a versioned path, so resolve the
+    /// launcher symlink rather than hardcoding one.
+    private static func claudeCodeBinaryPaths() -> [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let candidates = [
+            home.appendingPathComponent(".local/bin/claude"),
+            URL(fileURLWithPath: "/usr/local/bin/claude"),
+            URL(fileURLWithPath: "/opt/homebrew/bin/claude"),
+        ]
+
+        var paths: [String] = []
+        for candidate in candidates where FileManager.default.fileExists(atPath: candidate.path) {
+            paths.append(candidate.path)
+            let resolved = candidate.resolvingSymlinksInPath().path
+            if resolved != candidate.path { paths.append(resolved) }
+        }
+        return paths
     }
 
     /// The account name Claude Code keyed its item under — usually the login
