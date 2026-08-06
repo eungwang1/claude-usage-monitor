@@ -29,6 +29,9 @@ final class AccountStore: ObservableObject {
     private var pollTask: Task<Void, Never>?
     /// Per-account backoff floor, set when the endpoint rate-limits us.
     private var nextAllowedFetch: [UUID: Date] = [:]
+    /// Modification date of Claude Code's keychain item at our last read, so
+    /// polling doesn't re-read (and re-prompt) while nothing has changed.
+    private var lastSeenClaudeCodeChange: Date?
 
     /// Which account Claude Code is currently logged in as, when we can tell.
     @Published private(set) var activeAccountID: UUID?
@@ -52,13 +55,21 @@ final class AccountStore: ObservableObject {
     /// Matches Claude Code's current token against the stored accounts. Falls
     /// back to the last switch we performed when the token has since been
     /// refreshed by Claude Code itself.
-    func detectActiveAccount() {
+    func detectActiveAccount(force: Bool = false) {
         // Nothing stored means Claude Code is logged out — claiming an account
         // is in use would be a guess, and a wrong one.
         guard Keychain.claudeCodeItemExists() else {
             activeAccountID = nil
+            lastSeenClaudeCodeChange = nil
             return
         }
+
+        // Reading Claude Code's credentials can raise a keychain prompt, so only
+        // do it when the item actually changed. The modification date comes from
+        // attributes, which are readable without permission.
+        let modified = Keychain.claudeCodeItemModified()
+        if !force, let modified, modified == lastSeenClaudeCodeChange { return }
+        lastSeenClaudeCodeChange = modified
 
         if let current = Keychain.currentClaudeCodeCredentials(),
            let match = matchingAccount(for: current) {

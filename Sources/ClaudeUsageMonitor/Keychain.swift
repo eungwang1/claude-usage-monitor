@@ -84,6 +84,17 @@ enum Keychain {
     /// Attributes-only lookup: tells us whether Claude Code has credentials
     /// stored without reading them, so it never triggers a permission prompt.
     static func claudeCodeItemExists() -> Bool {
+        claudeCodeAttributes() != nil
+    }
+
+    /// When Claude Code's item last changed. Reading *attributes* never prompts,
+    /// unlike reading the data — so this is the cheap way to notice a login
+    /// happened without asking the user for permission on every poll.
+    static func claudeCodeItemModified() -> Date? {
+        claudeCodeAttributes()?[kSecAttrModificationDate as String] as? Date
+    }
+
+    private static func claudeCodeAttributes() -> [String: Any]? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: claudeCodeService,
@@ -91,7 +102,10 @@ enum Keychain {
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
         var item: CFTypeRef?
-        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess else {
+            return nil
+        }
+        return item as? [String: Any]
     }
 
     /// What Claude Code is currently logged in with, used to work out which
