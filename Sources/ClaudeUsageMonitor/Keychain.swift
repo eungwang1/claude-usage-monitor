@@ -3,12 +3,15 @@ import Security
 
 enum KeychainError: LocalizedError {
     case notFound
+    case claudeCodeNotLoggedIn
     case unexpectedFormat
     case os(OSStatus)
 
     var errorDescription: String? {
         switch self {
         case .notFound: return "키체인에서 항목을 찾을 수 없습니다."
+        case .claudeCodeNotLoggedIn:
+            return "Claude Code에 로그인된 계정이 없습니다.\n터미널에서 claude 를 실행해 /login 으로 로그인한 뒤 다시 시도하세요."
         case .unexpectedFormat: return "키체인 항목의 형식을 해석할 수 없습니다."
         case .os(let status):
             let message = SecCopyErrorMessageString(status, nil) as String? ?? "알 수 없는 오류"
@@ -73,8 +76,22 @@ enum Keychain {
     /// Reads Claude Code's own keychain entry. macOS will prompt for permission
     /// the first time, since another app created the item.
     static func importFromClaudeCode() throws -> StoredCredentials {
+        guard claudeCodeItemExists() else { throw KeychainError.claudeCodeNotLoggedIn }
         let data = try readClaudeCodeItem()
         return try parseClaudeCode(data)
+    }
+
+    /// Attributes-only lookup: tells us whether Claude Code has credentials
+    /// stored without reading them, so it never triggers a permission prompt.
+    static func claudeCodeItemExists() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: claudeCodeService,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
     }
 
     /// What Claude Code is currently logged in with, used to work out which

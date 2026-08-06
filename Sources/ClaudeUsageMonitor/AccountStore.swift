@@ -53,11 +53,21 @@ final class AccountStore: ObservableObject {
     /// back to the last switch we performed when the token has since been
     /// refreshed by Claude Code itself.
     func detectActiveAccount() {
+        // Nothing stored means Claude Code is logged out — claiming an account
+        // is in use would be a guess, and a wrong one.
+        guard Keychain.claudeCodeItemExists() else {
+            activeAccountID = nil
+            return
+        }
+
         if let current = Keychain.currentClaudeCodeCredentials(),
            let match = matchingAccount(for: current) {
             activeAccountID = match.id
             return
         }
+
+        // Credentials exist but we couldn't match them — either an unregistered
+        // login, or reading was blocked. Trust the last switch we performed.
         if let raw = UserDefaults.standard.string(forKey: Self.activeKey) {
             activeAccountID = UUID(uuidString: raw)
         }
