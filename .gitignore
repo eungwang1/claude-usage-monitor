@@ -1,0 +1,16 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# 빌드 산출물
+build/
+*.app
+
+# 서명 관련 (절대 커밋 금지)
+*.p12
+*.pem
+*.mobileprovision
+
+# macOS
+.DS_Store
